@@ -215,6 +215,7 @@ function desenharGrafico(h){
 }
 
 mostrar('inicio');
+ if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>
 </body>
 </html>
