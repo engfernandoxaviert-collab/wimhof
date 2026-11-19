@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wim Hof Tracker</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:sans-serif;background:#0f172a;color:#fff;min-height:100vh;
+       display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center}
+  .tela{display:none;width:100%;max-width:420px}
+  .ativa{display:block}
+  h1{margin-bottom:24px}
+  button{width:100%;padding:18px;margin:8px 0;border:none;border-radius:14px;
+         font-size:1.2rem;background:#38bdf8;color:#0f172a;font-weight:bold}
+  button.sec{background:#334155;color:#fff}
+  button.verm{background:#f43f5e;color:#fff}
+  .circulo{width:200px;height:200px;border-radius:50%;background:#38bdf8;margin:30px auto;
+           display:flex;align-items:center;justify-content:center;font-size:3rem;color:#0f172a;
+           transition:transform 1.5s ease-in-out}
+  .grande{transform:scale(1.2)} .pequeno{transform:scale(.8)}
+  .reten{background:#a78bfa} .recup{background:#22c55e}
+  .opcoes{display:flex;gap:10px}
+  .opcoes button.sel{background:#22c55e}
+  .hist{text-align:left;background:#1e293b;padding:12px;border-radius:10px;margin:6px 0;font-size:.9rem}
+  canvas{width:100%;background:#1e293b;border-radius:12px;margin-bottom:12px}
+  .leg{font-size:.85rem;margin-bottom:10px}
+  .leg span{margin:0 8px}
+  #lista{max-height:35vh;overflow-y:auto}
+</style>
+</head>
+<body>
+
+<div id="inicio" class="tela ativa">
+  <h1>🧊 Wim Hof</h1>
+  <p id="infoRounds" style="margin-bottom:20px"></p>
+  <button onclick="iniciar()">▶ Começar</button>
+  <button class="sec" onclick="mostrar('config')">⚙ Configuração</button>
+  <button class="sec" onclick="verHistorico()">📈 Evolução</button>
+</div>
+
+<div id="config" class="tela">
+  <h1>Rounds</h1>
+  <div class="opcoes">
+    <button onclick="setRounds(3)">3</button>
+    <button onclick="setRounds(4)">4</button>
+    <button onclick="setRounds(5)">5</button>
+  </div>
+  <button class="sec" onclick="mostrar('inicio')">Voltar</button>
+</div>
+
+<div id="sessao" class="tela">
+  <h2 id="fase"></h2>
+  <div id="circ" class="circulo">0</div>
+  <p id="dica"></p>
+  <button id="btnAcao"></button>
+  <button class="sec" onclick="cancelar()">✖ Cancelar</button>
+</div>
+
+<div id="historico" class="tela">
+  <h1>Evolução</h1>
+  <canvas id="grafico" width="400" height="250"></canvas>
+  <div class="leg"><span style="color:#38bdf8">● Melhor</span><span style="color:#a78bfa">● Média</span></div>
+  <div id="lista"></div>
+  <button class="sec" onclick="mostrar('inicio')">Voltar</button>
+</div>
+
+<script>
+let rounds = +localStorage.getItem('rounds') || 3;
+let roundAtual, tempos, timer;
+const RESP = 30, REC = 15;
+const $ = id => document.getElementById(id);
+const vibrar = ms => navigator.vibrate && navigator.vibrate(ms);
+
+function mostrar(id){
+  document.querySelectorAll('.tela').forEach(t=>t.classList.remove('ativa'));
+  $(id).classList.add('ativa');
+  $('infoRounds').textContent = `Rounds: ${rounds}`;
+  document.querySelectorAll('.opcoes button').forEach(b=>
+    b.classList.toggle('sel', +b.textContent===rounds));
+}
+function setRounds(n){ rounds=n; localStorage.setItem('rounds',n); mostrar('config'); }
+function botao(txt, fn, cls=''){ const b=$('btnAcao'); b.textContent=txt; b.onclick=fn; b.className=cls; }
+
+function iniciar(){ roundAtual=1; tempos=[]; mostrar('sessao'); respirar(); }
+function cancelar(){ clearInterval(timer); mostrar('inicio'); }
+
+// 1) Respiração guiada
+function respirar(){
+  clearInterval(timer);
+  $('fase').textContent = `Round ${roundAtual}/${rounds} – Respiração`;
+  $('dica').textContent = 'Inspire fundo, solte sem forçar';
+  botao('⏭ Pular para retenção', aguardarRetencao, 'sec');
+  let n=0; $('circ').textContent=0;
+  timer=setInterval(()=>{
+    n++; $('circ').textContent=n;
+    $('circ').className='circulo '+(n%2?'grande':'pequeno');
+    if(n>=RESP) aguardarRetencao();
+  },1500);
+}
+
+// 2) Aguarda o clique para começar a retenção
+function aguardarRetencao(){
+  clearInterval(timer); vibrar(200);
+  $('fase').textContent = `Round ${roundAtual} – Pronto`;
+  $('dica').textContent = 'Solte o ar e toque para iniciar o cronômetro';
+  $('circ').className='circulo reten'; $('circ').textContent='⏸';
+  botao('▶ Iniciar retenção', retencao);
+}
+
+// 3) Retenção cronometrada
+function retencao(){
+  $('fase').textContent = `Round ${roundAtual} – Retenção`;
+  $('dica').textContent = 'Segure sem ar. Toque quando precisar respirar.';
+  const ini=Date.now(); $('circ').textContent='0s';
+  timer=setInterval(()=>{ $('circ').textContent=Math.floor((Date.now()-ini)/1000)+'s'; },200);
+  botao('⏹ Respirei', ()=>{
+    clearInterval(timer);
+    tempos.push(Math.round((Date.now()-ini)/1000));
+    recuperacao();
+  }, 'verm');
+}
+
+// 4) Recuperação automática de 15 s
+function recuperacao(){
+  vibrar(200);
+  $('fase').textContent='Recuperação';
+  $('dica').textContent=`Inspire fundo e segure (último: ${tempos.at(-1)}s)`;
+  $('btnAcao').style.display='none';
+  $('circ').className='circulo recup grande';
+  let s=REC; $('circ').textContent=s;
+  timer=setInterval(()=>{
+    s--; $('circ').textContent=s;
+    if(s<=0){
+      clearInterval(timer); vibrar([100,100,100]);
+      $('btnAcao').style.display='block';
+      if(roundAtual<rounds){ roundAtual++; respirar(); } else finalizar();
+    }
+  },1000);
+}
+
+function finalizar(){
+  const h=JSON.parse(localStorage.getItem('hist')||'[]');
+  h.unshift({data:new Date().toLocaleString('pt-BR'), tempos});
+  localStorage.setItem('hist',JSON.stringify(h));
+  verHistorico();
+}
+
+function verHistorico(){
+  const h=JSON.parse(localStorage.getItem('hist')||'[]');
+  $('lista').innerHTML = h.length ? h.map((s,i)=>{
+    const max=Math.max(...s.tempos), med=Math.round(s.tempos.reduce((a,b)=>a+b)/s.tempos.length);
+    return `<div class="hist"><b>${s.data}</b>
+      <span style="float:right" onclick="apagar(${i})">🗑</span><br>
+      ${s.tempos.map((t,j)=>`R${j+1}: ${t}s`).join(' · ')}<br>🏆 ${max}s · Média ${med}s</div>`;
+  }).join('') : '<p>Nenhuma sessão ainda.</p>';
+  mostrar('historico');
+  desenharGrafico(h.slice().reverse());
+}
+
+function apagar(i){
+  if(!confirm('Apagar esta sessão?')) return;
+  const h=JSON.parse(localStorage.getItem('hist')||'[]');
+  h.splice(i,1); localStorage.setItem('hist',JSON.stringify(h)); verHistorico();
+}
+
+function desenharGrafico(h){
+  const c=$('grafico'), ctx=c.getContext('2d'), W=c.width, H=c.height, P=35;
+  ctx.clearRect(0,0,W,H);
+  if(!h.length) return;
+  const melhor=h.map(s=>Math.max(...s.tempos));
+  const media=h.map(s=>s.tempos.reduce((a,b)=>a+b)/s.tempos.length);
+  const maxY=Math.ceil(Math.max(...melhor)/30)*30 || 30;
+  const x=i=> h.length===1 ? W/2 : P+i*(W-P*1.5)/(h.length-1);
+  const y=v=> H-P-v*(H-P*1.8)/maxY;
+
+  // grade e eixo Y
+  ctx.strokeStyle='#334155'; ctx.fillStyle='#94a3b8'; ctx.font='11px sans-serif';
+  for(let v=0; v<=maxY; v+=maxY/4){
+    ctx.beginPath(); ctx.moveTo(P,y(v)); ctx.lineTo(W-10,y(v)); ctx.stroke();
+    ctx.fillText(Math.round(v)+'s',2,y(v)+4);
+  }
+  ctx.fillText('Sessões →',W-70,H-10);
+
+  const linha=(dados,cor)=>{
+    ctx.strokeStyle=cor; ctx.fillStyle=cor; ctx.lineWidth=2.5;
+    ctx.beginPath(); dados.forEach((v,i)=>i?ctx.lineTo(x(i),y(v)):ctx.moveTo(x(i),y(v))); ctx.stroke();
+    dados.forEach((v,i)=>{ ctx.beginPath(); ctx.arc(x(i),y(v),4,0,7); ctx.fill(); });
+  };
+  linha(media,'#a78bfa'); linha(melhor,'#38bdf8'); ctx.lineWidth=1;
+}
+
+mostrar('inicio');
+</script>
+</body>
+</html>
