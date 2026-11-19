@@ -97,4 +97,124 @@ const vibrar = ms => navigator.vibrate && navigator.vibrate(ms);
 function mostrar(id){
   document.querySelectorAll('.tela').forEach(t=>t.classList.remove('ativa'));
   $(id).classList.add('ativa');
-  $('infoRounds').textContent = `Rounds:
+  $('infoRounds').textContent = `Rounds: ${rounds} · ` + (guiada ? `Ritmo: ${vel}s` : 'Sem respiração guiada');
+  document.querySelectorAll('#optRounds button').forEach(b=>b.classList.toggle('sel', +b.dataset.v===rounds));
+  document.querySelectorAll('#optGuiada button').forEach(b=>b.classList.toggle('sel', +b.dataset.v===guiada));
+  document.querySelectorAll('#optVel button').forEach(b=>b.classList.toggle('sel', +b.dataset.v===vel));
+  $('blocoVel').classList.toggle('off', !guiada);
+  $('slider').value = vel;
+  $('velTxt').textContent = `${vel}s por respiração (~${Math.round(RESP*vel)}s no total)`;
+}
+function setRounds(n){ rounds=n; localStorage.setItem('rounds',n); mostrar('config'); }
+function setVel(v){ vel=v; localStorage.setItem('vel',v); mostrar('config'); }
+function setGuiada(g){ guiada=g; localStorage.setItem('guiada',g); mostrar('config'); }
+function botao(txt, fn, cls=''){ const b=$('btnAcao'); b.textContent=txt; b.onclick=fn; b.className=cls; }
+
+function iniciar(){ roundAtual=1; tempos=[]; mostrar('sessao'); proximo(); }
+function proximo(){ guiada ? respirar() : aguardarRetencao(); }
+function cancelar(){ clearInterval(timer); $('btnAcao').style.display='block'; mostrar('inicio'); }
+
+function respirar(){
+  clearInterval(timer);
+  $('fase').textContent = `Round ${roundAtual}/${rounds} – Respiração`;
+  $('dica').textContent = 'Inspire fundo, solte sem forçar';
+  botao('⏭ Pular para retenção', aguardarRetencao, 'sec');
+  $('circ').style.transition = `transform ${vel}s ease-in-out`;
+  let n=0; $('circ').textContent=0; $('circ').className='circulo';
+  timer=setInterval(()=>{
+    n++; $('circ').textContent=n;
+    $('circ').className='circulo '+(n%2?'grande':'pequeno');
+    if(n>=RESP) aguardarRetencao();
+  }, vel*1000);
+}
+
+function aguardarRetencao(){
+  clearInterval(timer); vibrar(200);
+  $('fase').textContent = `Round ${roundAtual}/${rounds} – Pronto`;
+  $('dica').textContent = guiada ? 'Solte o ar e toque para iniciar o cronômetro'
+                                 : 'Faça suas respirações, solte o ar e toque para iniciar';
+  $('circ').className='circulo reten'; $('circ').textContent='⏸';
+  botao('▶ Iniciar retenção', retencao);
+}
+
+function retencao(){
+  $('fase').textContent = `Round ${roundAtual}/${rounds} – Retenção`;
+  $('dica').textContent = 'Segure sem ar. Toque quando precisar respirar.';
+  const ini=Date.now(); $('circ').textContent='0s';
+  timer=setInterval(()=>{ $('circ').textContent=Math.floor((Date.now()-ini)/1000)+'s'; },200);
+  botao('⏹ Respirei', ()=>{
+    clearInterval(timer);
+    tempos.push(Math.round((Date.now()-ini)/1000));
+    recuperacao();
+  }, 'verm');
+}
+
+function recuperacao(){
+  vibrar(200);
+  $('fase').textContent='Recuperação';
+  $('dica').textContent=`Inspire fundo e segure (último: ${tempos.at(-1)}s)`;
+  $('btnAcao').style.display='none';
+  $('circ').className='circulo recup grande';
+  let s=REC; $('circ').textContent=s;
+  timer=setInterval(()=>{
+    s--; $('circ').textContent=s;
+    if(s<=0){
+      clearInterval(timer); vibrar([100,100,100]);
+      $('btnAcao').style.display='block';
+      if(roundAtual<rounds){ roundAtual++; proximo(); } else finalizar();
+    }
+  },1000);
+}
+
+function finalizar(){
+  const h=JSON.parse(localStorage.getItem('hist')||'[]');
+  h.unshift({data:new Date().toLocaleString('pt-BR'), tempos});
+  localStorage.setItem('hist',JSON.stringify(h));
+  verHistorico();
+}
+
+function verHistorico(){
+  const h=JSON.parse(localStorage.getItem('hist')||'[]');
+  $('lista').innerHTML = h.length ? h.map((s,i)=>{
+    const max=Math.max(...s.tempos), med=Math.round(s.tempos.reduce((a,b)=>a+b)/s.tempos.length);
+    return `<div class="hist"><b>${s.data}</b>
+      <span style="float:right" onclick="apagar(${i})">🗑</span><br>
+      ${s.tempos.map((t,j)=>`R${j+1}: ${t}s`).join(' · ')}<br>🏆 ${max}s · Média ${med}s</div>`;
+  }).join('') : '<p>Nenhuma sessão ainda.</p>';
+  mostrar('historico');
+  desenharGrafico(h.slice().reverse());
+}
+
+function apagar(i){
+  if(!confirm('Apagar esta sessão?')) return;
+  const h=JSON.parse(localStorage.getItem('hist')||'[]');
+  h.splice(i,1); localStorage.setItem('hist',JSON.stringify(h)); verHistorico();
+}
+
+function desenharGrafico(h){
+  const c=$('grafico'), ctx=c.getContext('2d'), W=c.width, H=c.height, P=35;
+  ctx.clearRect(0,0,W,H);
+  if(!h.length) return;
+  const melhor=h.map(s=>Math.max(...s.tempos));
+  const media=h.map(s=>s.tempos.reduce((a,b)=>a+b)/s.tempos.length);
+  const maxY=Math.ceil(Math.max(...melhor)/30)*30 || 30;
+  const x=i=> h.length===1 ? W/2 : P+i*(W-P*1.5)/(h.length-1);
+  const y=v=> H-P-v*(H-P*1.8)/maxY;
+  ctx.strokeStyle='#334155'; ctx.fillStyle='#94a3b8'; ctx.font='11px sans-serif';
+  for(let v=0; v<=maxY; v+=maxY/4){
+    ctx.beginPath(); ctx.moveTo(P,y(v)); ctx.lineTo(W-10,y(v)); ctx.stroke();
+    ctx.fillText(Math.round(v)+'s',2,y(v)+4);
+  }
+  ctx.fillText('Sessões →',W-70,H-10);
+  const linha=(dados,cor)=>{
+    ctx.strokeStyle=cor; ctx.fillStyle=cor; ctx.lineWidth=2.5;
+    ctx.beginPath(); dados.forEach((v,i)=>i?ctx.lineTo(x(i),y(v)):ctx.moveTo(x(i),y(v))); ctx.stroke();
+    dados.forEach((v,i)=>{ ctx.beginPath(); ctx.arc(x(i),y(v),4,0,7); ctx.fill(); });
+  };
+  linha(media,'#a78bfa'); linha(melhor,'#38bdf8'); ctx.lineWidth=1;
+}
+
+mostrar('inicio');
+</script>
+</body>
+</html>
